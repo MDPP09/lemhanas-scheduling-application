@@ -11,6 +11,8 @@
 - ✅ Penyimpanan data secara lokal menggunakan SQLite
 - ✅ Validasi input untuk mencegah duplikasi jadwal
 - ✅ Tampilan daftar kegiatan berdasarkan tanggal
+- ✅ filtering untuk setiap pimpinan
+
 
 ---
 
@@ -53,7 +55,8 @@ python main.py
 
 
 🧑‍💻 Developer
-Nama: wwdp09
+
+Name: wwdp09
 
 Email: whathappenedwithdafa@gmail.com
 
