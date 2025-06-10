@@ -55,7 +55,8 @@ python main.py
 
 
 🧑‍💻 Developer
-Nama: wwdp09
+
+Name: wwdp09
 
 Email: whathappenedwithdafa@gmail.com
 
