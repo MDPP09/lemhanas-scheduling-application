@@ -2,6 +2,9 @@ import pandas as pd
 from datetime import datetime
 import sqlite3 # Diperlukan untuk create_table di bagian __main__ untuk pengujian
 
+# Import fungsi dari db_handler yang sudah diupdate
+from db_handler import add_activity, get_all_pimpinan, add_pimpinan, create_table
+
 # Fungsi import_activities_from_excel
 def import_activities_from_excel(file_path):
     imported_count = 0
@@ -12,18 +15,22 @@ def import_activities_from_excel(file_path):
         df = pd.read_excel(file_path, header=0, dtype=str)
 
         # Mapping header Excel ke nama kolom database kita
+        # 'PIMPINAN' sekarang akan digunakan untuk mencari id_pimpinan
         column_mapping = {
             'TANGGAL': 'tanggal_kegiatan',
-            # 'WAKTU' sekarang akan diurai menjadi dua kolom DB: waktu_mulai_kegiatan dan waktu_akhir_kegiatan
             'KEGIATAN': 'uraian_kegiatan',
             'TEMPAT/RUANGAN': 'tempat_ruangan',
-            'PIMPINAN': 'pimpinan',
+            # 'PIMPINAN' akan diurai terpisah
             'PELAKSANA/PESERTA': 'daftar_peserta',
             'TGL INPUT': 'tanggal_input',
             'WKT INPUT': 'waktu_input',
             'PIC': 'narahubung',
             'KONTAK PERSON': 'kontak_person'
         }
+
+        # Cache pimpinan data to avoid repeated DB queries
+        # pimpinan_name -> pimpinan_id
+        pimpinan_cache = {p['nama'].lower(): p['id'] for p in get_all_pimpinan()}
 
         for row_idx, row_series in df.iterrows():
             excel_row_number = row_idx + 2 
@@ -35,17 +42,38 @@ def import_activities_from_excel(file_path):
                     cell_value = ''
                 data[db_col] = cell_value
 
+            # --- Tangani Kolom PIMPINAN dari Excel ---
+            pimpinan_excel_name = str(row_series.get('PIMPINAN', '')).strip()
+            if not pimpinan_excel_name:
+                errors.append(f"Baris {excel_row_number}: Kolom PIMPINAN kosong. Kegiatan tidak akan ditambahkan.")
+                failed_count += 1
+                continue
+            
+            id_pimpinan_found = pimpinan_cache.get(pimpinan_excel_name.lower())
+            
+            if id_pimpinan_found is None:
+                # Pimpinan tidak ditemukan, tambahkan sebagai pimpinan baru
+                success_add_pimpinan, msg_add_pimpinan, new_pimpinan_id = add_pimpinan(pimpinan_excel_name)
+                if success_add_pimpinan:
+                    id_pimpinan_found = new_pimpinan_id
+                    pimpinan_cache[pimpinan_excel_name.lower()] = new_pimpinan_id # Update cache
+                    print(f"DEBUG: Pimpinan '{pimpinan_excel_name}' ditambahkan otomatis.")
+                else:
+                    errors.append(f"Baris {excel_row_number}: Gagal menambahkan pimpinan otomatis '{pimpinan_excel_name}': {msg_add_pimpinan}. Kegiatan tidak ditambahkan.")
+                    failed_count += 1
+                    continue
+            
+            data['id_pimpinan'] = id_pimpinan_found
+
             # --- Tangani kolom WAKTU dari Excel untuk waktu_mulai_kegiatan dan waktu_akhir_kegiatan ---
-            # Asumsi: Kolom 'WAKTU' di Excel berisi "HH:MM - HH:MM"
             excel_time_raw = str(row_series.get('WAKTU', '')).strip()
             
-            if not excel_time_raw: # Skip if no time data
+            if not excel_time_raw:
                 errors.append(f"Baris {excel_row_number}: Kolom WAKTU kosong. Baris dilewati.")
                 failed_count += 1
                 continue
 
             try:
-                # Pisahkan string waktu "HH:MM - HH:MM"
                 start_time_str, end_time_str = excel_time_raw.split('-')
                 data['waktu_mulai_kegiatan'] = start_time_str.strip()
                 data['waktu_akhir_kegiatan'] = end_time_str.strip()
@@ -68,8 +96,7 @@ def import_activities_from_excel(file_path):
 
             # --- Validasi dan Konversi Format Tanggal Kegiatan ---
             try:
-                # Asumsi: Format tanggal di Excel adalah DD-MM-YYYY (misal: 01-05-2025)
-                tanggal_kegiatan_obj = datetime.strptime(data['tanggal_kegiatan'], '%d-%m-%Y').date()
+                tanggal_kegiatan_obj = datetime.strptime(data['tanggal_kegiatan'], '%d-%m-%Y').date() # Assuming DD-MM-YYYY
                 data['tanggal_kegiatan'] = tanggal_kegiatan_obj.strftime('%Y-%m-%d')
             except ValueError as ve:
                 errors.append(f"Baris {excel_row_number}: Format TANGGAL '{data.get('tanggal_kegiatan')}' tidak valid. (Harap pakai DD-MM-YYYY). Error: {ve}")
@@ -89,7 +116,6 @@ def import_activities_from_excel(file_path):
                 failed_count += 1
                 continue
 
-            from db_handler import add_activity 
             success, message = add_activity(data)
             
             if success:
@@ -114,26 +140,8 @@ if __name__ == '__main__':
     # Ganti dengan path ke file Excel yang Anda ingin uji
     test_excel_path = os.path.join(current_dir, 'Jadwal Giat Pimpinan Lemhannas RI.xlsx - JUNI 2025.xlsx')
 
-    conn = sqlite3.connect("schedule.db")
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Kegiatan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tanggal_kegiatan TEXT NOT NULL,
-            waktu_mulai_kegiatan TEXT NOT NULL,
-            waktu_akhir_kegiatan TEXT NOT NULL,
-            uraian_kegiatan TEXT,
-            tempat_ruangan TEXT,
-            pimpinan TEXT,
-            daftar_peserta TEXT,
-            tanggal_input TEXT,
-            waktu_input TEXT,
-            narahubung TEXT,
-            kontak_person TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    # Pastikan tabel sudah dibuat
+    create_table()
 
     print(f"Mencoba mengimpor dari: {test_excel_path}")
     imported, failed, errs = import_activities_from_excel(test_excel_path)
