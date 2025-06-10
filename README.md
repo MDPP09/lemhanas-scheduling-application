@@ -11,6 +11,8 @@
 - ✅ Penyimpanan data secara lokal menggunakan SQLite
 - ✅ Validasi input untuk mencegah duplikasi jadwal
 - ✅ Tampilan daftar kegiatan berdasarkan tanggal
+- ✅ filtering untuk setiap pimpinan
+
 
 ---
 
